@@ -1,9 +1,8 @@
-import funzioniC
+import random, socket, pickle
 import paho.mqtt.client as mqtt
-import random
-import socket
-import pickle
+import time
 
+#-----------------------MAINCODE FUNCTIONS-----------------------------------   
 
 def defusername():
     while True:
@@ -18,6 +17,41 @@ def defusername():
     print("\nciao", username,"\n")
     return username
 
+#------------------------SOCKET FUNCTIONS------------------------------------
+
+def setupconnection():
+    s=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    while True:
+        try:
+            p=int(input("inserire porta: "))
+        except:
+            print("\ndato inserito non valido\n")
+            continue
+        h=input("inserire url ngrok: ")
+        break
+    return s,h,p
+
+def controlloremoto(cs):
+    while True:
+        try:
+            contr=input("on = led on\noff = led off\nback = exit\n")
+            if contr=="on":
+                cs.send("on".encode('utf-8'))
+            elif contr=="off":
+                cs.send("off".encode('utf-8'))
+            elif contr=="back":
+                cs.send("back".encode('utf-8'))
+                print("\ndisconnessione\n")
+                cs.close()
+                break
+            else:
+                print("\ninserisci un dato valido\n")
+                continue
+        except ConnectionAbortedError:
+            print("[WinError 10053] Connessione interrotta dal software del computer host")
+            break
+
+#-------------------------MQTT FUNCTIONS-------------------------------------
 
 def setupmqtt():
     broker_url = "mqtt.eclipseprojects.io"
@@ -35,12 +69,13 @@ def setupmqtt():
 
 
 
-
+#------------------------------MAINCODE--------------------------------------
 username=defusername()
 while True:
     mod=input("1 = connessione via ngrok/socket\n2 = connessione via mqtt\n3 = esci\n")
+
     if mod =="1":
-        client_socket, host, port=funzioniC.setupconnection()
+        client_socket, host, port=setupconnection()
         client_socket.settimeout(10)
         try:
             client_socket.connect((host,port))
@@ -78,7 +113,7 @@ while True:
             client_socket.close()
             continue
         print("\n..in connessione..\n")
-        funzioniC.controlloremoto(client_socket)
+        controlloremoto(client_socket)
         client_socket.close()
         continue
         
@@ -86,9 +121,9 @@ while True:
         autmqtt=""
         def on_message(client, userdata, message):
             global autmqtt
+            global message_received
             autmqtt = message.payload.decode("utf-8")
             print("Received message:", autmqtt)
-            global message_received
             message_received = True
 
         client = setupmqtt()
@@ -98,6 +133,7 @@ while True:
 
         message_received = False
         while not message_received:
+            time.sleep(0.5)
             pass
         client.unsubscribe("led/aut/spam")
         client.loop_stop()
@@ -112,10 +148,5 @@ while True:
             print("ko")
             client.publish("led/aut/rensp", "ko", qos=2)
 
-        client.loop_stop()
-
     elif mod=="3":
         break
-    else:
-        print("\ninserisci un dato valido\n")
-        continue
