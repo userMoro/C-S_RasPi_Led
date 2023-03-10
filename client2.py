@@ -1,9 +1,7 @@
-import funzioniC
 import paho.mqtt.client as mqtt
-import random
-import socket
-import pickle
+import random, socket, pickle
 
+#----------------------MAINCODE FUNCTIONS----------------------------------- 
 
 def defusername():
     while True:
@@ -16,8 +14,21 @@ def defusername():
     num=random.randint(0,9)
     username=username+"-"+str(num)
     print("\nciao", username,"\n")
-    return username
+    return username 
 
+def setupconnection():
+    s=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    while True:
+        try:
+            p=int(input("inserire porta: "))
+        except:
+            print("\ndato inserito non valido\n")
+            continue
+        h=input("inserire url ngrok: ")
+        break
+    return s,h,p
+
+#--------------------------MQTT FUNCTIONS-----------------------------------
 
 def setupmqtt():
     broker_url = "mqtt.eclipseprojects.io"
@@ -33,14 +44,36 @@ def setupmqtt():
     c.loop()
     return c
 
+#--------------------------SOCKET FUNCTIONS-----------------------------------
+
+def controlloremoto(cs):
+    while True:
+        try:
+            contr=input("on = led on\noff = led off\nback = exit\n")
+            if contr=="on":
+                cs.send("on".encode('utf-8'))
+            elif contr=="off":
+                cs.send("off".encode('utf-8'))
+            elif contr=="back":
+                cs.send("back".encode('utf-8'))
+                print("\ndisconnessione\n")
+                cs.close()
+                break
+            else:
+                print("\ninserisci un dato valido\n")
+                continue
+        except ConnectionAbortedError:
+            print("[WinError 10053] Connessione interrotta dal software del computer host")
+            break
 
 
+#-------------------------------MAINCODE----------------------------------------
 
 username=defusername()
 while True:
     mod=input("1 = connessione via ngrok/socket\n2 = connessione via mqtt\n3 = esci\n")
     if mod =="1":
-        client_socket, host, port=funzioniC.setupconnection()
+        client_socket, host, port=setupconnection()
         client_socket.settimeout(10)
         try:
             client_socket.connect((host,port))
@@ -78,7 +111,7 @@ while True:
             client_socket.close()
             continue
         print("\n..in connessione..\n")
-        funzioniC.controlloremoto(client_socket)
+        controlloremoto(client_socket)
         client_socket.close()
         continue
         
