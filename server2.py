@@ -1,7 +1,11 @@
-import funzioniS
-import threading
-import time
-import pickle
+import threading, time, pickle, socket
+import paho.mqtt.client as mqtt
+#import RPi.GPIO as GPIO
+#GPIO.setmode(GPIO.BCM)
+#GPIO.setup(18, GPIO.OUT)
+#GPIO.setup(19, GPIO.OUT)
+
+#----------------------MAINCODE FUNCTIONS----------------------------------- 
 
 def inizio():
     pinner=0
@@ -16,13 +20,37 @@ def inizio():
             break
     return pinner, connections_count, open, password
 
-def filenocheck(client_socket):
-    global connections_count
-    global hello
-    hello=True
+def terminal():
     while True:
-        print(client_socket.fileno())
-        time.sleep(1)
+        on_off=input("inserisci un comando:\n-on1 = accendi led 1\n-on2 = accendi led 2\n-off1 = spegni led 1\n-off2 = spegni led 2\n-back = seleziona modalità\n")
+        if on_off=="on1":
+            GPIO.output(18, True)
+        elif on_off=="on2":
+            GPIO.output(19, True)
+        elif on_off=="off1":
+            GPIO.output(18, False)
+        elif on_off=="off2":
+            GPIO.output(19, False)
+        elif on_off=="back":
+            break
+        else:
+            print("\ndato inserito non valido\n")
+
+def setup():
+    socket=socketsetup()
+#    mqtt=mqttsetup()
+    return socket, mqtt
+
+
+
+def socketsetup():
+    host='localhost'                         
+    port=5902
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((host, port))
+    print("socket creato(host:",host," porta:",port,")")
+    s.listen(2)
+    return s
 
 def ricezione(cs):
     global contr 
@@ -38,7 +66,6 @@ def ricezione_(cs):
     auth = pickle.loads(data)
     addr=auth[0]
     usr=auth[1]
-
 
 def controlloremoto(cs, a, u):
     #cs.settimeout(10)
@@ -104,7 +131,6 @@ def controlloremoto(cs, a, u):
        # connections_count-=1
         #pinner-=1
 
-
 def sockeThread(s_s):
     global password
     global connections_count
@@ -136,6 +162,32 @@ def sockeThread(s_s):
     print(addr,"con",usr,client_address)
     controlloremoto(communication_socket, client_address, usr)
     print("1 = terminale\n2 = remoto(",connections_count,"/2 connesioni aperte)\n3 = esci\n")
+
+#--------------------------MQTT FUNCTIONS------------------------------------- 
+
+def mqttsetup():
+    def on_connect(client, userdata, flags, rc):
+        if rc == 0:
+            print("Server connesso a broker MQTT")
+        else:
+            print(f"Errore di connessione. Codice di ritorno: {rc}")
+        client.loop_stop()
+
+    broker_url = "mqtt.eclipseprojects.io"
+    broker_port = 1883
+    c = mqtt.Client("server")
+    c.connect(broker_url, broker_port)
+    c.on_connect = on_connect
+    c.loop_start()
+    return c
+
+def filenocheck(client_socket):
+    global connections_count
+    global hello
+    hello=True
+    while True:
+        print(client_socket.fileno())
+        time.sleep(1)
 
 def mqttOperations(client):
     def on_message(client, userdata, message):
@@ -169,19 +221,22 @@ def passwordSpam(client):
         time.sleep(2)
 
 
+
+#-------------------------------MAINCODE--------------------------------------- 
+
 pinner, connections_count, open, password=inizio()
 client=""
 while True:
     print("1 = terminale\n2 = remoto(",connections_count,"/2 connesioni aperte)\n3 = esci\n")
     start=input("")
     if start=="1":
-        funzioniS.terminal()
+        terminal()
     elif start=="2":
         try:
             if connections_count==0 and open==False:
-                server_socket, mqtt_client=funzioniS.setup() 
+                server_socket, mqtt_client=setup() 
                 if not client:
-                    client=funzioniS.mqttsetup()
+                    client=mqttsetup()
                 open=True
                 time.sleep(2)
             if connections_count>=2:
