@@ -14,11 +14,6 @@ MQTT:
                             se 3 ko desottoscrive da rensp/idclient
 '''
 
-'''
-SOCKET:
--creo socket server diverso per ogni client
-'''
-
 
 #import RPi.GPIO as GPIO
 import threading, socket, pickle, time, random, queue
@@ -59,17 +54,6 @@ def terminal():
         else:
             print("\ndato inserito non valido\n")
 
-def timeout_timer():
-    global tic
-    global kill
-    tic=time.time()
-    while True:
-        toc=time.time()
-        if toc-tic>30:
-            print("\ntimeout\n")
-            mqtt_client.loop_stop()
-            mqtt_client.disconnect()
-            break
 #---------------------------MQTT FUNCTIONS------------------------------------- 
 
 def heartbeat(r_topic):
@@ -84,6 +68,28 @@ def heartbeat(r_topic):
             break
         time.sleep(2)
 
+def timeout_timer(id):
+    global timer_list, connections_count, clients_count
+    tic=time.time()
+    while True:
+        found=False
+        toc=time.time()
+        if toc-tic>30:
+            print("\ntimeout di",id," premi invio\n")
+            mqtt_client.loop_stop()
+            mqtt_client.disconnect()
+            connections_count-=1
+            clients_count-=1
+            break
+        for x in timer_list:
+            if x[1]==id:
+                found=True
+                if x[0]==True:
+                    tic=time.time()
+                    x[0]=False
+        if found==False:
+            break
+
 #------------------------------MAINCODE------------------------------------- 
 #GPIO.setmode(GPIO.BCM)
 #GPIO.setup(18, GPIO.OUT)
@@ -92,8 +98,9 @@ connections_count, clients_count, password, servname=inizio()
 print("server id:",servname,"\nserver password:",password)
 clientslist=[]
 death_note=[]
-timer=threading.Thread(target=timeout_timer, daemon=True)
+timer_list=[]
 while True:
+    time.sleep(1)
     print("\nclients connessi:",clients_count,"/2")
     print("1 = terminale\n2 = remoto(",connections_count,"/2 connesioni aperte)\n3 = esci\n4 = chiudi connessioni")
     start=input("")
@@ -103,56 +110,73 @@ while True:
         if connections_count<2:
             connections_count+=1
 
-        def on_connect(client, userdata, flags, rc):
-            pass
-
         def on_message(client, userdata, message):
-            global death_note
+            global death_note, timer_list
+            global clients_count, connections_count
             print("ricevuto",message.payload.decode())
-            bouncer=False
             raw_mess=message.payload.decode().split(".")
             mess=raw_mess[0]
             id_client=raw_mess[1]
             rensp_topic="rensp/"+id_client
             comm_topic="comm/"+id_client
-            for x in clientslist:
-                if x[0]==id_client:
-                    bouncer=True
-            if bouncer==False:
-                client_data=(id_client, comm_topic)
-                clientslist.append(client_data)
             if mess==password:
                 client.publish(rensp_topic, "ok")
                 client.subscribe(comm_topic)
                 death_note.append([False, rensp_topic])
-                threading.Thread(target=heartbeat, daemon=True, args=(rensp_topic,)).start()
+                timer_list.append([True, id_client])
+                T_heartbeat=threading.Thread(target=heartbeat, daemon=True, args=(rensp_topic,))
+                T_timer=threading.Thread(target=timeout_timer, daemon=True, args=(id_client,))
+                T_timer.start()
+                T_heartbeat.start()
+                client_data=(id_client, comm_topic)
+                clientslist.append(client_data)
+                clients_count+=1
+            elif mess=="1":
+                print("on")
+                for x in timer_list:
+                    if x[1]==id_client:
+                        x[0]=True
+            elif mess=="2":
+                print("off")
+                for x in timer_list:
+                    if x[1]==id_client:
+                        x[0]=True
+                time.sleep(1)
             elif mess=="3":
                 client.unsubscribe(comm_topic, rensp_topic) 
+                clients_count-=1
+                connections_count-=1
+                if connections_count==0:
+                    client.disconnect()
                 for x in death_note:
                     if x[1]==rensp_topic:
                         x[0]=True
-                        time.sleep(2.5)
+                        time.sleep(2.2)
                         index = death_note.index(x)
                         death_note.pop(index)
                 for x in clientslist:
                     if x[0]==id_client:
                         index = clientslist.index(x)
                         clientslist.pop(index)
-            elif mess=="1":
-                print("on")
-            elif mess=="2":
-                print("off")
+                for x in timer_list:
+                    if x[1]==id_client:
+                        index = timer_list.index(x)
+                        timer_list.pop(index)
+                print("\npremi invio")
             else:
                 client.publish(rensp_topic, "ko")
+                for x in timer_list:
+                    if x[1]==id_client:
+                        x[0]=True
+
 
         broker_host = "localhost"
         broker_port = 1883
         aut_count=0
-        mqtt_client = mqtt.Client(servname)
+        mqtt_client = mqtt.Client(servname, clean_session=True)
         mqtt_starter=False
         mqtt_client.connect(broker_host, broker_port)
         mqtt_client.subscribe("topic1/#")
-        mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
         mqtt_client.loop_start()
         pass
@@ -220,8 +244,12 @@ while True:
                     close=input("3 = annulla")
                     if close=="1":
                         connections_count-=1
+                        break
                     elif close=="2":
                         connections_count-=2
+                        mqtt_client.loop_stop()
+                        mqtt_client.disconnect()
+                        break
                     elif close=="3":
                         break
                     else:
@@ -231,6 +259,7 @@ while True:
                     close=input("\nchiudere la connessione? (y/n)")
                     if close=="s":
                         connections_count-=1
+                        break
                     elif close=="n":
                         break
                     else:
