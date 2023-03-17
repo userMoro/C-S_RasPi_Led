@@ -14,11 +14,6 @@ MQTT:
                             se 3 ko desottoscrive da rensp/idclient
 '''
 
-'''
-SOCKET:
--creo socket server diverso per ogni client
-'''
-
 import random, socket, pickle, threading, time
 import paho.mqtt.client as mqtt
 
@@ -47,50 +42,51 @@ def topics_setup(id):
 def timeout_timer():
     global start_main_loop, tic, timerblock, pause
     while True:
+        tic=time.time()
         while not timerblock:
-            tic=time.time()
-            while True:
-                toc=time.time()
-                if toc-tic>30:
-                    print("\ntimeout\n")
-                    client.loop_stop()
-                    client.disconnect()
-                    start_main_loop=True
-                    timerblock=True
-                    if T_comandi.is_alive():
-                        pause=True
-                    break
-                time.sleep(2)
+            toc=time.time()
+            if toc-tic>30:
+                print("\ntimeout. premi invio\n")
+                client.loop_stop()
+                client.disconnect()
+                start_main_loop=True
+                timerblock=True
+                if T_comandi.is_alive():
+                    pause=True
+                break
+            time.sleep(2)
         time.sleep(2)
 
 def heartbeat():
     global start_main_loop, alive, pause, timerblock
     while True:
+        alive=time.time()
         while not pause:
-            alive=time.time()
-            while True:
-                toc=time.time()
-                if toc-alive>5:
-                    print("\nserver disconnesso\n")
-                    client.loop_stop()
-                    client.disconnect()
-                    start_main_loop=True
-                    pause=True
-                    timerblock=True
-                    break
-                time.sleep(2)
+            toc=time.time()
+            if toc-alive>10:
+                print("\nconnessione persa. premi invio\n")
+                client.publish(make,sure)
+                client.loop_stop()
+                client.disconnect()
+                start_main_loop=True
+                pause=True
+                timerblock=True
+                break
+            time.sleep(2)
         time.sleep(2)
 
 def comandi_mqtt():
-    global pause, start_main_loop
+    global pause, start_main_loop, timerblock, tic
     commtopic="comm/"+username
     while True:
         while not pause:
             on_off=input("1 = on\n2 = off\n3 = back\n")
             if on_off=="1":
+                tic=time.time()
                 on_off_mess=on_off+"."+username
                 client.publish(commtopic, on_off_mess)
             elif on_off=="2":
+                tic=time.time()
                 on_off_mess=on_off+"."+username
                 client.publish(commtopic, on_off_mess)
             elif on_off=="3":
@@ -100,15 +96,24 @@ def comandi_mqtt():
                 client.disconnect()
                 pause=True
                 start_main_loop=True
+                timerblock=True
                 break
             else:
                 print("\ndato inserito non valido\n")
+                tic=time.time()
         time.sleep(2)
+
+def spam(t,p):
+    while not stop_spam:
+        client.publish(t,p)
+        time.sleep(3)
 
 #------------------------------MAINCODE--------------------------------------
 
 username=inizio()
 rensptopic, topic1=topics_setup(username)
+make="comm/"+username
+sure="3."+username
 start_main_loop=True
 T_timer=threading.Thread(target=timeout_timer, daemon=True)
 timerblock=False
@@ -118,6 +123,7 @@ T_beat=threading.Thread(target=heartbeat, daemon=True)
 
 while True:   
     if start_main_loop==True:
+        stop_spam=False
         aut_count=2
         mod=input("1 = connessione via ngrok/socket\n2 = connessione via mqtt\n3 = esci\n")
         if mod =="1":
@@ -133,11 +139,13 @@ while True:
                     timerblock=False
                 pw=input("inserisci password: ")+"."+username
                 tic=time.time()
-                client.publish(topic1,pw,retain=True)
+                client.publish(topic1,pw)
                 print("...in attesa del server, non premere pulsanti...")
+                threading.Thread(target=spam, args=(topic1,pw)).start()
 
             def on_message(client, userdata, message):
-                global tic, aut_count, start_main_loop, alive, pause
+                global tic, aut_count, start_main_loop, alive, pause, timerblock, stop_spam
+                stop_spam=True
                 rensp=message.payload.decode()
                 if rensp=="ok":
                     print("ok")
@@ -150,8 +158,10 @@ while True:
                 elif rensp=="ko":
                     if not aut_count:
                         print("\npassword errata. tentativi esauriti.\n")
+                        client.publish(make,sure)
                         client.loop_stop()
                         client.disconnect()
+                        timerblock=True
                         start_main_loop=True
                     else:
                         print("\npassword errata.",aut_count,"tentativi rimasti")
@@ -178,7 +188,3 @@ while True:
         else:
             print("\ncomando inserito non valido\n")
             continue
-
-
-
-#quando arrivo a ...in attesa... e faccio timeout, se dopo metto password giusta pause=True
