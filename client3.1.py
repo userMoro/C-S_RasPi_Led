@@ -40,7 +40,7 @@ def topics_setup(id):
 #-------------------------MQTT FUNCTIONS-------------------------------------
 
 def timeout_timer():
-    global start_main_loop, tic, timerblock, pause
+    global start_main_loop, tic, timerblock, pause, stop_spam
     while True:
         tic=time.time()
         while not timerblock:
@@ -51,11 +51,10 @@ def timeout_timer():
                 client.disconnect()
                 start_main_loop=True
                 timerblock=True
+                stop_spam=True
                 if T_comandi.is_alive():
                     pause=True
                 break
-            time.sleep(2)
-        time.sleep(2)
 
 def heartbeat():
     global start_main_loop, alive, pause, timerblock
@@ -72,8 +71,6 @@ def heartbeat():
                 pause=True
                 timerblock=True
                 break
-            time.sleep(2)
-        time.sleep(2)
 
 def comandi_mqtt():
     global pause, start_main_loop, timerblock, tic
@@ -101,7 +98,6 @@ def comandi_mqtt():
             else:
                 print("\ndato inserito non valido\n")
                 tic=time.time()
-        time.sleep(2)
 
 def spam(t,p):
     while not stop_spam:
