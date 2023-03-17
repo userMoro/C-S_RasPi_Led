@@ -100,7 +100,6 @@ clientslist=[]
 death_note=[]
 timer_list=[]
 while True:
-    time.sleep(1)
     print("\nclients connessi:",clients_count,"/2")
     print("1 = terminale\n2 = remoto(",connections_count,"/2 connesioni aperte)\n3 = esci\n4 = chiudi connessioni")
     start=input("")
@@ -124,10 +123,8 @@ while True:
                 client.subscribe(comm_topic)
                 death_note.append([False, rensp_topic])
                 timer_list.append([True, id_client])
-                T_heartbeat=threading.Thread(target=heartbeat, daemon=True, args=(rensp_topic,))
-                T_timer=threading.Thread(target=timeout_timer, daemon=True, args=(id_client,))
-                T_timer.start()
-                T_heartbeat.start()
+                threading.Thread(target=heartbeat, daemon=True, args=(rensp_topic,)).start()
+                threading.Thread(target=timeout_timer, daemon=True, args=(id_client,)).start()
                 client_data=(id_client, comm_topic)
                 clientslist.append(client_data)
                 clients_count+=1
@@ -141,7 +138,6 @@ while True:
                 for x in timer_list:
                     if x[1]==id_client:
                         x[0]=True
-                time.sleep(1)
             elif mess=="3":
                 client.unsubscribe(comm_topic, rensp_topic) 
                 clients_count-=1
@@ -151,7 +147,7 @@ while True:
                 for x in death_note:
                     if x[1]==rensp_topic:
                         x[0]=True
-                        time.sleep(2.2)
+                        time.sleep(2)
                         index = death_note.index(x)
                         death_note.pop(index)
                 for x in clientslist:
@@ -168,18 +164,16 @@ while True:
                 for x in timer_list:
                     if x[1]==id_client:
                         x[0]=True
-
+            time.sleep(0.5)
 
         broker_host = "localhost"
         broker_port = 1883
-        aut_count=0
         mqtt_client = mqtt.Client(servname, clean_session=True)
-        mqtt_starter=False
         mqtt_client.connect(broker_host, broker_port)
         mqtt_client.subscribe("topic1/#")
         mqtt_client.on_message = on_message
         mqtt_client.loop_start()
-        pass
+        
     elif start=="3":
         print("bye bye")
         break
