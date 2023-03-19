@@ -100,6 +100,7 @@ def comandi_mqtt():
                 tic=time.time()
 
 def spam(t,p):
+    time.sleep(3)
     while not stop_spam:
         client.publish(t,p)
         time.sleep(3)
