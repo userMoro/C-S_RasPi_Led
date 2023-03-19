@@ -45,7 +45,7 @@ def timeout_timer():
         tic=time.time()
         while not timerblock:
             toc=time.time()
-            if toc-tic>30:
+            if toc-tic>120:
                 print("\ntimeout. premi invio\n")
                 client.loop_stop()
                 client.disconnect()
@@ -145,7 +145,6 @@ while True:
                 stop_spam=True
                 rensp=message.payload.decode()
                 if rensp=="ok":
-                    print("ok")
                     try:
                         T_comandi.start()
                         T_beat.start()
