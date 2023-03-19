@@ -22,7 +22,8 @@ import paho.mqtt.client as mqtt
 #----------------------MAINCODE FUNCTIONS-----------------------------------            
 
 def inizio():
-    conn_count=0
+    #conn_count=0
+    conn_state="chiusa)"
     act_count=0
     name="Server"+str(random.randint(1,999))
     while True:
@@ -32,7 +33,8 @@ def inizio():
             continue
         else:
             break
-    return conn_count, act_count, passw, name
+    #return conn_count, act_count, passw, name
+    return conn_state, act_count, passw, name
 
 def terminal():
     while True:
@@ -52,7 +54,7 @@ def terminal():
         elif on_off=="back":
             break
         else:
-            print("\ndato inserito non valido\n")
+            pass
 
 #---------------------------MQTT FUNCTIONS------------------------------------- 
 
@@ -69,17 +71,20 @@ def heartbeat(r_topic):
         time.sleep(2)
 
 def timeout_timer(id):
-    global timer_list, connections_count, clients_count
+    #global timer_list, connections_count, clients_count
+    global timer_list, clients_count
     tic=time.time()
     while True:
         found=False
         toc=time.time()
-        if toc-tic>30:
-            print("\ntimeout di",id," premi invio\n")
-            mqtt_client.loop_stop()
-            mqtt_client.disconnect()
-            connections_count-=1
-            clients_count-=1
+        if toc-tic>120:
+            for x in clientslist:
+                if x[0]==id:
+                    print("\ntimeout di",id," premi invio\n")
+                    mqtt_client.loop_stop()
+                    mqtt_client.disconnect()
+                    #connections_count-=1
+                    clients_count-=1
             break
         for x in timer_list:
             if x[1]==id:
@@ -90,24 +95,37 @@ def timeout_timer(id):
         if found==False:
             break
 
+
+    #broker_host = "localhost"
+    #broker_port = 1883
+    #mqtt_client = mqtt.Client(servname, clean_session=True)
+    #mqtt_client.connect(broker_host, broker_port)
+    #mqtt_client.subscribe("topic1/#")
+    #mqtt_client.on_message = on_message
+    #mqtt_client.loop_start()
+
+
 #------------------------------MAINCODE------------------------------------- 
 #GPIO.setmode(GPIO.BCM)
 #GPIO.setup(18, GPIO.OUT)
 #GPIO.setup(19, GPIO.OUT)
-connections_count, clients_count, password, servname=inizio()
+#connections_count, clients_count, password, servname=inizio()
+conn_state, clients_count, password, servname=inizio()
 print("server id:",servname,"\nserver password:",password)
 clientslist=[]
 death_note=[]
 timer_list=[]
 while True:
+    time.sleep(1)
     print("\nclients connessi:",clients_count,"/2")
-    print("1 = terminale\n2 = remoto(",connections_count,"/2 connesioni aperte)\n3 = esci\n4 = chiudi connessioni")
+    #print("1 = terminale\n2 = remoto(",connections_count,"/2 connesioni aperte)\n3 = esci\n4 = chiudi connessioni")
+    print("1 = terminale\n2 = remoto(connessione",conn_state,"\n3 = esci\n4 = chiudi connessioni")
     start=input("")
     if start=="1":
         terminal()
     elif start=="2":
-        if connections_count<2:
-            connections_count+=1
+        #if connections_count<2:
+        #    connections_count+=1
 
         def on_message(client, userdata, message):
             global death_note, timer_list
@@ -138,11 +156,16 @@ while True:
                 for x in timer_list:
                     if x[1]==id_client:
                         x[0]=True
+                time.sleep(1)
             elif mess=="3":
                 client.unsubscribe(comm_topic, rensp_topic) 
                 clients_count-=1
-                connections_count-=1
-                if connections_count==0:
+                #connections_count-=1
+                #if connections_count==0:
+                #    print("client disconnesso")
+                #    client.disconnect()
+                if conn_state=="chiuso":
+                    print("client disconnesso")
                     client.disconnect()
                 for x in death_note:
                     if x[1]==rensp_topic:
@@ -158,105 +181,103 @@ while True:
                     if x[1]==id_client:
                         index = timer_list.index(x)
                         timer_list.pop(index)
+                print(id_client,"disconnesso")
                 print("\npremi invio")
             else:
                 client.publish(rensp_topic, "ko")
                 for x in timer_list:
                     if x[1]==id_client:
                         x[0]=True
-            time.sleep(0.5)
-
-        broker_host = "localhost"
-        broker_port = 1883
-        mqtt_client = mqtt.Client(servname, clean_session=True)
-        mqtt_client.connect(broker_host, broker_port)
-        mqtt_client.subscribe("topic1/#")
-        mqtt_client.on_message = on_message
-        mqtt_client.loop_start()
+        if conn_state=="chiusa)":
+            conn_state="aperta)"
+            broker_host = "localhost"
+            broker_port = 1883
+            mqtt_client = mqtt.Client(servname, clean_session=True)
+            mqtt_client.connect(broker_host, broker_port)
+            #print("server client connesso")
+            mqtt_client.subscribe("topic1/#")
+            mqtt_client.on_message = on_message
+            mqtt_client.loop_start()
         
     elif start=="3":
         print("bye bye")
         break
     elif start=="4":
         while True:
-            if clients_count!=0:
-                if connections_count>clients_count:
-                    print("\nclient connessi:",clients_count)
-                    print("connessioni aperte:",connections_count)
-                    print("\n1 = chiudi connessione libera")
-                    print("2 = espelli client")
-                    print("3 = chiudi tutto")
-                    close=input("4 = annulla")
-                    if close=="1":
-                        connections_count-=1
-                    elif close=="2":
-                        #client.disconnect, clients_count-1, connections_count-1
-                        pass
-                    elif close=="3":
-                        #client.disconnect, clients_count-1, connections_count-2
-                        pass
-                    elif close=="4":
-                        break
-                    else:
-                        continue
-                    pass
-                elif connections_count==clients_count:
-                    if connections_count==1:
-                        print("\nclient connessi:",clients_count)
-                        print("connessioni aperte:",connections_count)
-                        close=input("espellere client?(s/n)")
-                        if close=="s":
-                            #client.disconnect, clients_count-1, connections_count-1
-                            pass
-                        elif close=="n":
-                            break
-                        else:
-                            continue
-                    else:
-                        print("\nclient connessi:",clients_count)
-                        print("connessioni aperte:",connections_count)
-                        print("quale client vuoi espellere?")#printa nomi dei client e tipo di connessione
-                        close=input()
-                        if close=="1":
-                            #espelli client 1
-                            pass
-                        elif close=="2":
-                            #espelli client 2
-                            pass
-                        elif close=="3":
-                            #espelli tutti
-                            pass
-                        elif close=="4":
-                            break
-                        else:
-                            continue
-            else:
-                if connections_count==2:
-                    print("\nnumero connessioni aperte = 2")
-                    print("\n1 = chiudi 1 connessione")
-                    print("2 = chiudi tutte le connessioni")
-                    close=input("3 = annulla")
-                    if close=="1":
-                        connections_count-=1
-                        break
-                    elif close=="2":
-                        connections_count-=2
-                        mqtt_client.loop_stop()
-                        mqtt_client.disconnect()
-                        break
-                    elif close=="3":
-                        break
-                    else:
-                        continue
-                elif connections_count==1:
-                    print("\nnumero connessioni aperte = 1")
-                    close=input("\nchiudere la connessione? (y/n)")
-                    if close=="s":
-                        connections_count-=1
-                        break
-                    elif close=="n":
-                        break
-                    else:
-                        continue
-                else:
+            print("\nclients connessi:",clients_count,"\n(connessione",conn_state)
+            if conn_state=="aperta)" and clients_count==0:
+                shut=input("chiudere connessione?(y/n)")
+                if shut=="y":
+                    conn_state="chiusa)"
+                    mqtt_client.disconnect()
                     break
+                elif shut=="n":
+                    break
+                else:
+                    continue
+            elif conn_state=="aperta)" and clients_count==1:
+                client=clientslist[0]
+                print("interrompere comunicazione con",client[0],"?(y/n)")
+                kick=input()
+                if kick=="y":
+                    clients_count-=1
+                    clientslist.pop(0)
+                    if client[1].split("/")[0]=="comm":
+                        mqtt_client.unsubscribe(client[1])
+                        rtopic_clone="rensp/"+client[0]
+                        for x in death_note:
+                            if x[1]==rtopic_clone:
+                                x[0]=True
+                                time.sleep(2)
+                                index = death_note.index(x)
+                                death_note.pop(index)
+                                break
+                    else:
+                        #gestire espulsione socket
+                        pass
+                elif kick=="n":
+                    break
+                else:
+                    continue
+            elif conn_state=="aperta)" and clients_count==2: 
+                client1=clientslist[0]
+                client2=clientslist[1]
+                print("1 = espelli",client1,"\n2 = espelli",client2,"\n3 = annulla")
+                kick=input()
+                if kick=="1":
+                    clientslist.pop(0)
+                    if client1[1].split("/")[0]=="comm":
+                        clients_count-=1
+                        mqtt_client.unsubscribe(client1[1]) 
+                        rtopic_clone="rensp/"+client1[0]
+                        for x in death_note:
+                            if x[1]==rtopic_clone:
+                                x[0]=True
+                                time.sleep(2)
+                                index = death_note.index(x)
+                                death_note.pop(index)
+                    else:
+                        #gestire espulsione socket
+                        pass
+                elif kick=="2":
+                    clientslist.pop(1)
+                    if client1[1].split("/")[0]=="comm":
+                        clients_count-=1
+                        mqtt_client.unsubscribe(client2[1]) 
+                        rtopic_clone="rensp/"+client2[0]
+                        for x in death_note:
+                            if x[1]==rtopic_clone:
+                                x[0]=True
+                                time.sleep(2)
+                                index = death_note.index(x)
+                                death_note.pop(index)
+                    else:
+                        #gestire espulsione socket
+                        pass
+                elif kick=="3":
+                    break
+                else:
+                    continue
+            else:
+                time.sleep(1.5)
+                break
