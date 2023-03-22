@@ -13,28 +13,97 @@ MQTT:
                          se ko chiede di rimandare messaggio fino a 3 volte
                             se 3 ko desottoscrive da rensp/idclient
 '''
-
-
+#------------------------------------------------------------------------
+#///////////////////////////////////////////////////////////////////////
+#-------------------------LIBRERIRES----------------------------------- 
 #import RPi.GPIO as GPIO
-import threading, socket, pickle, time, random, queue
+import threading, socket, time, random, getpass
 import paho.mqtt.client as mqtt
-
-#----------------------MAINCODE FUNCTIONS-----------------------------------            
-
-def inizio():
+#------------------------------------------------------------------------
+#///////////////////////////////////////////////////////////////////////
+#-------------------------FUNCTIONS------------------------------------ 
+#-------------------------operators-----------------------------------            
+def inizio():#imposta lo stato della connessione, crea id del server e fa inserire password
     conn_state="chiusa)"
-    act_count=0
     name="Server"+str(random.randint(1,999))
     while True:
-        passw=input("inserisci password di questo server: ")
+        passw=getpass.getpass("inserisci password di questo server: ")
         if passw=="":
             print("\nimposta una password prima di iniziare\n")
             continue
         else:
             break
-    return conn_state, act_count, passw, name
+    return conn_state, passw, name
 
-def terminal():
+def timeout_timer(id):#timer di 40 secondi. controlla lo stato di attività di ogni client. al timeout espelle il client
+    tic=time.time()#inizia a contare
+    while True:
+        found=False
+        toc=time.time()#tiene il conto dopo ogni giro
+        if toc-tic>40:#confrontando i due conteggi, se sono passati + di 40 sec
+            for x in clientslist:
+                if x[0]==id:
+                    print("\ntimeout di",id," premi invio\n")
+                    clientslist.pop(clientslist.index(x))
+                    try:
+                        x[1].close()
+                    except:
+                        mqtt_client.unsubscribe("comm/"+id)
+                        clean_list([0,"rensp/"+id],[death_note])
+            clean_list([id],[timer_list])
+            break
+        for x in timer_list:
+            if x[0]==id:
+                found=True#continua il giro solo se il client è ancora timerlist
+                if x[1]==True:
+                    tic=time.time()#reimposta tic se timerlist==True (operazione eseguita da client) e lo risetta a false
+                    x[1]=False
+        if found==False:
+            break#client non presente nella timerlist
+        time.sleep(1)
+
+def restore_time(id):#segnala attività del client facendo resettare il suo timer
+    for x in timer_list:
+        if x[0]==id:#imposta elemento di client in timerlist a true per riavviare timer
+            x[1]=True
+
+def clean_list(elementi, superlista):#elimina un client da una o più liste
+    for lista in superlista:#scorre ogni lista inserita
+
+        if lista==queue_list:#toglie elemento dalla coda
+            lista.pop(lista.index(elementi[0]))
+
+        elif lista==death_note:#mette True da passare come "kill" a death_note, apetta 2 secondi per assicurarsi che funzione heartbeat abbia finito e poi toglie client
+            for x in lista:
+                if x[1]==elementi[1]:
+                    x[0]=True
+                    time.sleep(2)
+                    lista.pop(lista.index(x))
+        else:
+            for x in lista:#le altre liste con id del client come primo elemento  (da eliminare)
+                if x[0]==elementi[0]:
+                    lista.pop(lista.index(x))
+
+def kick_out(client):#espelle un client e lo elimina dalle liste
+    try:
+        client[1].close()
+    except:#se non è un socket desottoscrive da topic mqtt corrispondente a client e ripulisce le liste
+        mqtt_client.unsubscribe(client[1])
+        rtopic_clone="rensp/"+client[0]
+        clean_list([0,rtopic_clone],[death_note])
+    clean_list([client[0]],[timer_list,clientslist,queue_list])
+
+def pin_assign(id):#assegna pin (18 o 19) al client
+    for x in clientslist:
+        if x[0]==id:#assegna sempre 18 al primo client della lista e 19 al secondo
+            pin=clientslist.index(x)
+    if pin==0:
+        pin=18
+    else:
+        pin=19
+    return pin
+#--------------------------terminal------------------------------------- 
+def terminal():#permette di eseguire comandi sul led da terminale
     while True:
         on_off=input("inserisci un comando:\n-on1 = accendi led 1\n-on2 = accendi led 2\n-off1 = spegni led 1\n-off2 = spegni led 2\n-back = seleziona modalità\n")
         if on_off=="on1":
@@ -53,13 +122,10 @@ def terminal():
             break
         else:
             pass
-
-#---------------------------MQTT FUNCTIONS------------------------------------- 
-
-def heartbeat(r_topic):
-    global death_note
+#----------------------------mqtt---------------------------------------
+def heartbeat(r_topic):#manda segnali di attività periodici al client
     while True:
-        for x in death_note:
+        for x in death_note:#ogni 2 secondi controlla lo stato di "kill" assegnato ad ogni client attivo; se è False manda un "beat", altrimenti esce
             if x[1]==r_topic:
                 kill=x[0]
         if not kill:
@@ -67,273 +133,201 @@ def heartbeat(r_topic):
         else:
             break
         time.sleep(2)
-
-def timeout_timer(id):
-    global timer_list, clients_count
-    tic=time.time()
-    while True:
-        found=False
-        toc=time.time()
-        if toc-tic>120:
-            for x in clientslist:
-                if x[0]==id:
-                    print("\ntimeout di",id," premi invio\n")
-                    mqtt_client.loop_stop()
-                    mqtt_client.disconnect()
-                    clients_count-=1
-            break
-        for x in timer_list:
-            if x[1]==id:
-                found=True
-                if x[0]==True:
-                    tic=time.time()
-                    x[0]=False
-        if found==False:
-            break
-
-
-    #broker_host = "localhost"
-    #broker_port = 1883
-    #mqtt_client = mqtt.Client(servname, clean_session=True)
-    #mqtt_client.connect(broker_host, broker_port)
-    #mqtt_client.subscribe("topic1/#")
-    #mqtt_client.on_message = on_message
-    #mqtt_client.loop_start()
-
-#--------------------------SOCKET FUNCTIONS-------------------------------------
-
-def socket_comm(communication_socket, id):
-    global clients_count
+#---------------------------socket---------------------------------------
+def socket_comm(communication_socket, id):#ricezione messaggi dal client autenticato tramite socket
     while conn_state=="aperta)":
-        raw_mess=communication_socket.recv(1024).decode('utf-8')
-        print(raw_mess)
-        id=raw_mess.split(".")[1]
-        mess=raw_mess.split(".")[0]
+        #______decodificazione_messaggio______
+        raw_mess=communication_socket.recv(1024).decode('utf-8').split(".")
+        mess=raw_mess[0]
+        id=raw_mess[1]
+        #______gestione_messaggi______________
+        restore_time(id)#resetta timer del client
         if mess=="1":
-            print("on da",id)
+            pin=pin_assign(id)
+            print("on da",id,"sul pin",pin)
         elif mess=="2":
-            print("off da",id)
-        elif mess=="3":
-            print(id,"disconnesso")
-            communication_socket.close()
+            pin=pin_assign(id)
+            print("off da",id,"sul pin",pin)
+        elif mess=="3":#disconnessione e rimozione da lista del client
             for x in clientslist:
                 if x[0]==id:
-                    index=clientslist.index(x)
-                    clientslist.pop(index)
-            clients_count-=1
+                    kick_out(x)
+            print(id,"disconnesso")
             break
 
-
-def clients_waiter():
+def clients_waiter():#thread che accetta connessioni in arrivo, crea socket ed incanala client in thread handle_socket_client
     try:
         communication_socket, client_address = s.accept()
         threading.Thread(target=handle_socket_client,daemon=True,args=(communication_socket,)).start()
     except OSError as e:
         print(e)
 
-def handle_socket_client(communication_socket):
-    global clients_count
-    if clients_count<2:
+def handle_socket_client(communication_socket):#richiama thread clients_waiter quando c'è spazio; a connessione aperta riceve messaggi e gestisce autenticazioni
+
+    if len(clientslist)<2:#richiama clients_waiter per accettare altre connessioni se i client connessi sono meno di 2
         threading.Thread(target=clients_waiter,daemon=True,args=()).start()
-    while conn_state=="aperta)":
+
+    while conn_state=="aperta)":#a connessione aperta
         try:
-            raw_mess=communication_socket.recv(1024).decode('utf-8')
-            mess=raw_mess.split(".")[0]
-            id=raw_mess.split(".")[1]
-            if mess==password:
-                print(raw_mess)
-                print("ok")
-                communication_socket.send("ok".encode('utf-8'))
-                clients_count+=1
-                clientslist.append([id,communication_socket])
-                socket_comm(communication_socket,id)
-            elif mess not in ["1","2","3",password]:
-                communication_socket.send("ko".encode('utf-8'))
-                print(raw_mess)
-                print("ko")
-        except (OSError,IndexError):
+            #______decodificazione_messaggio____________________
+            raw_mess=communication_socket.recv(1024).decode('utf-8').split(".")
+            mess=raw_mess[0]
+            id=raw_mess[1]
+            #______controllo_della_coda__________________________
+            if mess not in ["1","2","3"] and len(queue_list)<2:#aggiunge a lista coda (queue_list) se client non ci è già presente
+                if not queue_list or queue_list[0]!=id:
+                    queue_list.append(id)
+            #______gestione_messaggi_autenticazione
+            if id in queue_list:#gestione messaggio di autenticazione una volta che il client è in lista
+                if mess==password:#password ricevuta giusta
+                    print(mess,id,"ok")
+                    communication_socket.send("ok".encode('utf-8'))#invia segnale per iniziare a comunicare
+                    clientslist.append([id,communication_socket])#aggiunge il client a lista clients
+                    timer_list.append([id, True])#inizializza e starta il timer per il client autenticato
+                    threading.Thread(target=timeout_timer, daemon=True, args=(id,)).start()
+                    socket_comm(communication_socket,id)#inizia funzione per recezione comandi da client
+                elif mess=="bye":#messaggio del client che si è disconnesso
+                    clean_list([id],[queue_list])
+                    communication_socket.close()#tolgo dalla lista e chiudo socket
+                else:#password ricevuta sbagliata
+                    communication_socket.send("ko".encode('utf-8'))#invia segnale di errore
+                    restore_time(id)#resetta timer del client
+                    print(mess, id,"ko") 
+
+            else:#la coda è piena 
+                communication_socket.send("no".encode('utf-8'))#invia segnale di coda piena
+                print(mess, id,"no")
+                communication_socket.close()#chiude socket e pulisce liste                                    ///////////
+                clean_list([id],[clientslist,timer_list,queue_list])   
+
+        #_______disconnection___________
+        except (OSError,IndexError):#in caso di disconnessione
             pass
-
-
-#------------------------------MAINCODE------------------------------------- 
+#------------------------------------------------------------------------
+#///////////////////////////////////////////////////////////////////////
+#---------------------------MAINCODE------------------------------------- 
 #GPIO.setmode(GPIO.BCM)
 #GPIO.setup(18, GPIO.OUT)
 #GPIO.setup(19, GPIO.OUT)
-conn_state, clients_count, password, servname=inizio()
+clientslist, death_note, timer_list, queue_list=[],[],[],[]
+conn_state, password, servname=inizio()
 print("server id:",servname,"\nserver password:",password)
-clientslist=[]
-death_note=[]
-timer_list=[]
 while True:
     time.sleep(1)
-    print("\nclients connessi:",clients_count,"/2")
+    print("\nclients connessi:",len(clientslist),"/2")
     print("1 = terminale\n2 = remoto(connessione",conn_state,"\n3 = esci\n4 = chiudi connessioni")
     start=input("")
-    if start=="1":
+
+    if start=="1":#operazioni da terminale
         terminal()
-    elif start=="2":
+
+    elif start=="2":#operazioni da remoto
 
         def on_message(client, userdata, message):
-            global death_note, timer_list
-            global clients_count, connections_count
-            print("ricevuto",message.payload.decode())
-            raw_mess=message.payload.decode().split(".")
-            mess=raw_mess[0]
-            id_client=raw_mess[1]
+            #______decodificazione_messaggio____________________
+            mess=message.payload.decode('utf-8').split(".")[0]
+            id_client=message.payload.decode('utf-8').split(".")[1]
             rensp_topic="rensp/"+id_client
             comm_topic="comm/"+id_client
-            if mess==password:
-                client.publish(rensp_topic, "ok")
-                client.subscribe(comm_topic)
-                death_note.append([False, rensp_topic])
-                timer_list.append([True, id_client])
-                threading.Thread(target=heartbeat, daemon=True, args=(rensp_topic,)).start()
-                threading.Thread(target=timeout_timer, daemon=True, args=(id_client,)).start()
-                client_data=(id_client, comm_topic)
-                clientslist.append(client_data)
-                clients_count+=1
-            elif mess=="1":
-                print("on")
-                for x in timer_list:
-                    if x[1]==id_client:
-                        x[0]=True
-            elif mess=="2":
-                print("off")
-                for x in timer_list:
-                    if x[1]==id_client:
-                        x[0]=True
-                time.sleep(1)
-            elif mess=="3":
-                client.unsubscribe(comm_topic, rensp_topic) 
-                clients_count-=1
-                #connections_count-=1
-                #if connections_count==0:
-                #    print("client disconnesso")
-                #    client.disconnect()
-                if conn_state=="chiuso":
-                    print("client disconnesso")
-                    client.disconnect()
-                for x in death_note:
-                    if x[1]==rensp_topic:
-                        x[0]=True
-                        time.sleep(2)
-                        index = death_note.index(x)
-                        death_note.pop(index)
+
+            #________ricezione_comandi__________________________
+            if mess=="1":#assegno pin, gestisco output e resetto timer relativo a client
+                pin=pin_assign(id_client)
+                print("on da",id_client,"sul pin",pin)
+                restore_time(id_client)
+            elif mess=="2":#assegno pin, gestisco output e resetto timer relativo a client
+                pin=pin_assign(id_client)
+                print("off da",id_client,"sul pin",pin)
+                restore_time(id_client)
+            elif mess=="3":#espulsione client
+                pin=pin_assign(id_client)
+                print("back da",id_client,"sul pin",pin)
                 for x in clientslist:
                     if x[0]==id_client:
-                        index = clientslist.index(x)
-                        clientslist.pop(index)
-                for x in timer_list:
-                    if x[1]==id_client:
-                        index = timer_list.index(x)
-                        timer_list.pop(index)
+                        kick_out(x)#passo elemento relativo a client contenente il socket per espellerlo
                 print(id_client,"disconnesso")
                 print("\npremi invio")
-            else:
-                client.publish(rensp_topic, "ko")
-                for x in timer_list:
-                    if x[1]==id_client:
-                        x[0]=True
-        if conn_state=="chiusa)":
+
+            #_______gestione_login_______________________________
+            elif len(queue_list)<2:#verifica numero di client accodati
+                if not queue_list or queue_list[0]!=id_client:#aggiunge id_client a queue_list(coda) se non è ancora presente
+                    queue_list.append(id_client)
+                if mess==password:#password inserita dall'utente corretta
+                    clientslist.append([id_client,comm_topic])#implemento liste
+                    death_note.append([False, rensp_topic])
+                    timer_list.append([id_client, True])
+                    client.publish(rensp_topic, "ok")#pubblico ok e sottoscrivo a topic per ricevere messaggi da client
+                    client.subscribe(comm_topic)
+                    threading.Thread(target=heartbeat, daemon=True, args=(rensp_topic,)).start()#inizio thread per segnalare recezione stabile a client
+                    threading.Thread(target=timeout_timer, daemon=True, args=(id_client,)).start()#faccio partire il timer relativo al client appena loggato
+                else:#password errata
+                    client.publish(rensp_topic, "ko")
+                    restore_time(id_client)#resetto timer
+            else:#la coda è già piena 
+                client.publish("no")#pubblico no e tolgo client dalle liste                   //////
+                clean_list([id_client],[clientslist,timer_list,queue_list])
+
+        if conn_state=="chiusa)":#1: se conn_state è "chiusa)" inizializza mqtt e socket e setta conn_state ad "aperta)"
+        #_______mqtt_init____________
             conn_state="aperta)"
             host = "localhost"
             broker_port = 1883
             mqtt_client = mqtt.Client(servname, clean_session=True)
             mqtt_client.connect(host, broker_port)
             mqtt_client.subscribe("topic1/#")
-            mqtt_client.on_message = on_message
+            mqtt_client.on_message = on_message#al ricevimento di messaggi esegue on_message
             mqtt_client.loop_start()
-                               
+
+        #_______socket_init____________                     
             port=5902
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.bind((host, port))
-            s.listen(5)
-            threading.Thread(target=clients_waiter,daemon=True,args=()).start()
+            s.listen(0)
+            threading.Thread(target=clients_waiter,daemon=True,args=()).start()#starta thread clients_waiter per accettare client e gestirli
         
-    elif start=="3":
+    elif start=="3":#chiusura programma
         print("bye bye")
-        break
+        break#esce dal ciclo 
 
-
-    elif start=="4":
+    elif start=="4":#gestione/chiusura connessioni
         while True:
-            print("\nclients connessi:",clients_count,"\n(connessione",conn_state)
-            if conn_state=="aperta)" and clients_count==0:
-                shut=input("chiudere connessione?(y/n)")
-                if shut=="y":
-                    conn_state="chiusa)"
-                    mqtt_client.disconnect()
-                    s.close()
-                    break
-                elif shut=="n":
-                    break
-                else:
-                    continue
-            elif conn_state=="aperta)" and clients_count==1:
-                client=clientslist[0]
-                print("interrompere comunicazione con",client[0],"?(y/n)")
-                kick=input()
-                if kick=="y":
-                    clients_count-=1
-                    clientslist.pop(0)
-                    try:
-                        client[1].close()
-                    except:
-                        mqtt_client.unsubscribe(client[1])
-                        rtopic_clone="rensp/"+client[0]
-                        for x in death_note:
-                            if x[1]==rtopic_clone:
-                                x[0]=True
-                                time.sleep(2)
-                                index = death_note.index(x)
-                                death_note.pop(index)
-                                break
-                elif kick=="n":
-                    break
-                else:
-                    continue
-            elif conn_state=="aperta)" and clients_count==2: 
-                client1=clientslist[0]
-                client2=clientslist[1]
-                print("1 = espelli",client1[0],"\n2 = espelli",client2[0],"\n3 = annulla")
-                kick=input()
-                if kick=="1":
-                    clients_count-=1
-                    clientslist.pop(0)
-                    try:
-                        client1[1].close()
-                    except:
-                        mqtt_client.unsubscribe(client1[1]) 
-                        rtopic_clone="rensp/"+client1[0]
-                        for x in death_note:
-                            if x[1]==rtopic_clone:
-                                x[0]=True
-                                time.sleep(2)
-                                index = death_note.index(x)
-                                death_note.pop(index)
-                elif kick=="2":
-                    clients_count-=1
-                    clientslist.pop(1)
-                    try:
-                        client2[1].close()
-                    except:
-                        mqtt_client.unsubscribe(client2[1]) 
-                        rtopic_clone="rensp/"+client2[0]
-                        for x in death_note:
-                            if x[1]==rtopic_clone:
-                                x[0]=True
-                                time.sleep(2)
-                                index = death_note.index(x)
-                                death_note.pop(index)
-                elif kick=="3":
-                    break
-                else:
-                    continue
+            print("\nclients connessi:",len(clientslist),"\n(connessione",conn_state)#visualizza stato connessione
+            if conn_state=="aperta)":
+
+                #_________no_clients_______
+                if len(clientslist)==0:#conn_state aperta), nessun client connesso
+                    shut=input("chiudere connessione?(y/n)")
+                    if shut=="y":#conn_state->chiusa), disconnessione broker e socket
+                        conn_state="chiusa)"
+                        mqtt_client.disconnect()
+                        s.close()
+                        break
+                    elif shut=="n":#torna indietro
+                        break
+
+                #__________1_client_________
+                elif len(clientslist)==1:#conn_state aperta), 1 client connesso
+                    client=clientslist[0]#imposta client all'unico id contenuto in clientslist
+                    print("interrompere comunicazione con",client[0],"?(y/n)")
+                    kick=input()
+                    if kick=="y":#disconnessione client e cancellazione dalle liste
+                        kick_out(client)
+                    elif kick=="n":#torna indietro
+                        break
+                
+                #__________2_client_________
+                elif len(clientslist)==2:#conn_state aperta), 2 client connessi
+                    client1=clientslist[0]#imposta client1 al primo id contenuto in clientslist
+                    client2=clientslist[1]#imposta client2 al secondo id contenuto in clientslist
+                    print("1 = espelli",client1[0],"\n2 = espelli",client2[0],"\n3 = annulla")
+                    kick=input()
+                    if kick=="1":#disconnessione client1 e cancellazione dalle liste
+                        kick_out(client1)
+                    elif kick=="2":#disconnessione client2 e cancellazione dalle liste
+                        kick_out(client2)
+                    elif kick=="3":#torna indietro
+                        break
             else:
                 time.sleep(1.5)
                 break
 
-#gestire timeout e heartbeat per socket
-#curare output
-#ottimizzare e smaltire codice
-#commentare codice
