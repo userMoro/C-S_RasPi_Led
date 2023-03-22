@@ -45,12 +45,7 @@ def timeout_timer(id):#timer di 40 secondi. controlla lo stato di attività di o
                 if x[0]==id:
                     print("\ntimeout di",id," premi invio\n")
                     clientslist.pop(clientslist.index(x))
-                    try:
-                        x[1].close()
-                    except:
-                        mqtt_client.unsubscribe("comm/"+id)
-                        clean_list([0,"rensp/"+id],[death_note])
-            clean_list([id],[timer_list])
+                    kick_out(id)
             break
         for x in timer_list:
             if x[0]==id:
@@ -264,7 +259,7 @@ while True:
                     client.publish(rensp_topic, "ko")
                     restore_time(id_client)#resetto timer
             else:#la coda è già piena 
-                client.publish("no")#pubblico no e tolgo client dalle liste                   //////
+                client.publish("no")#pubblico no e tolgo client dalle liste
                 clean_list([id_client],[clientslist,timer_list,queue_list])
 
         if conn_state=="chiusa)":#1: se conn_state è "chiusa)" inizializza mqtt e socket e setta conn_state ad "aperta)"
@@ -331,3 +326,4 @@ while True:
                 time.sleep(1.5)
                 break
 
+#curare output
