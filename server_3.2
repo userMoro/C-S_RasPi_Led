@@ -1,18 +1,3 @@
-'''
-MQTT:
--installare mosquitto 
--id client e server con numeri random 0-1000
-
--server sottoscritto a topic1/#
--client sottoscritto a rensp/idclient
--client pubblica su topic1/idclient password inserita->server riceve su topic1/# e ricava idclient
--server controlla password: se giusta pubblica ok su rensp/idclient
-                                si sottoscrive a comm/idclient->riceve messaggi da client e elabora->se riceve back/timeout si desottoscrive da comm/idclient
-                            se sbagliata pubblica ko su rensp/idclient
--client riceve risposta: se ok inizia a pubblicare su comm/idclient
-                         se ko chiede di rimandare messaggio fino a 3 volte
-                            se 3 ko desottoscrive da rensp/idclient
-'''
 #------------------------------------------------------------------------
 #///////////////////////////////////////////////////////////////////////
 #-------------------------LIBRERIRES----------------------------------- 
@@ -140,9 +125,11 @@ def socket_comm(communication_socket, id):#ricezione messaggi dal client autenti
         if mess=="1":
             pin=pin_assign(id)
             print("on da",id,"sul pin",pin)
+            #GPIO.output(pin, True)
         elif mess=="2":
             pin=pin_assign(id)
             print("off da",id,"sul pin",pin)
+            #GPIO.output(pin, False)
         elif mess=="3":#disconnessione e rimozione da lista del client
             for x in clientslist:
                 if x[0]==id:
@@ -228,10 +215,12 @@ while True:
             #________ricezione_comandi__________________________
             if mess=="1":#assegno pin, gestisco output e resetto timer relativo a client
                 pin=pin_assign(id_client)
+                #GPIO.output(pin, True)
                 print("on da",id_client,"sul pin",pin)
                 restore_time(id_client)
             elif mess=="2":#assegno pin, gestisco output e resetto timer relativo a client
                 pin=pin_assign(id_client)
+                #GPIO.output(pin, False)
                 print("off da",id_client,"sul pin",pin)
                 restore_time(id_client)
             elif mess=="3":#espulsione client
@@ -262,21 +251,32 @@ while True:
                 client.publish("no")#pubblico no e tolgo client dalle liste
                 clean_list([id_client],[clientslist,timer_list,queue_list])
 
+        while True:
+        #_______local/other____________
+            rem_type=input("su che rete preferisci comunicare?\n1 = rete locale\n2 = altre reti")
+            if rem_type=="1":
+                mqtt_host="localhost"
+                break
+            elif rem_type=="2":
+                mqtt_host="192.168.1.100"
+                break
+
+
         if conn_state=="chiusa)":#1: se conn_state è "chiusa)" inizializza mqtt e socket e setta conn_state ad "aperta)"
         #_______mqtt_init____________
             conn_state="aperta)"
-            host = "localhost"
             broker_port = 1883
             mqtt_client = mqtt.Client(servname, clean_session=True)
-            mqtt_client.connect(host, broker_port)
+            mqtt_client.connect(mqtt_host, broker_port)
             mqtt_client.subscribe("topic1/#")
             mqtt_client.on_message = on_message#al ricevimento di messaggi esegue on_message
             mqtt_client.loop_start()
 
-        #_______socket_init____________                     
-            port=5902
+        #_______socket_init____________                 
+            socket_port=5902
+            socket_host="localhost"
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind((host, port))
+            s.bind((socket_host,socket_port))
             s.listen(0)
             threading.Thread(target=clients_waiter,daemon=True,args=()).start()#starta thread clients_waiter per accettare client e gestirli
         
@@ -325,5 +325,3 @@ while True:
             else:
                 time.sleep(1.5)
                 break
-
-#curare output
