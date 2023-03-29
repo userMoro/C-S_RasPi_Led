@@ -1,19 +1,3 @@
-'''
-MQTT:
--installare mosquitto 
--id client e server con numeri random 0-1000
-
--server sottoscritto a topic1/#
--client sottoscritto a rensp/idclient
--client pubblica su topic1/idclient password inserita->server riceve su topic1/# e ricava idclient
--server controlla password: se giusta pubblica ok su rensp/idclient
-                                si sottoscrive a comm/idclient->riceve messaggi da client e elabora->se riceve back/timeout si desottoscrive da comm/idclient
-                            se sbagliata pubblica ko su rensp/idclient
--client riceve risposta: se ok inizia a pubblicare su comm/idclient
-                         se ko chiede di rimandare messaggio fino a 3 volte
-                            se 3 ko desottoscrive da rensp/idclient
-'''
-
 import random, socket, threading, time, getpass
 import paho.mqtt.client as mqtt
 
@@ -163,20 +147,43 @@ while True:
         aut_count=2#per contare quante volte viene provata una password
         timeout=0#per gestire timeout in attesa del server
 
-        mod=input("1 = connessione via ngrok/socket\n2 = connessione via mqtt\n3 = esci\n")
+        mod=input("\n1 = connessione via ngrok/socket\n2 = connessione via mqtt\n3 = esci\n")
 
         #__________modalità_socket___________________
         if mod =="1":
+            while True:
+            #_______local/other____________
+                rem_type=input("\nsu che rete preferisci comunicare?\n1 = rete locale\n2 = altre reti")
+                if rem_type=="1":
+                    print("\nrete locale selezionata\n")
+                    break
+                elif rem_type=="2":
+                    print("\naltre reti selezionato\n")
+                    break
+
+            if rem_type=="2":
+                while True:
+                    host_n=input("inserisci indirizzo ngrok: ")
+                    try:
+                        port_n=int(input("inserisci porta ngrok: "))
+                        break
+                    except:
+                        print("\nporta non valida\n")
+            else:
+                host_n="localhost"
+                port_n=5902
+
             print("...in attesa del server, non premere pulsanti...")
             while connesso==None:
 
                 #________connessione__________________________
                 if timeout<10:#attende client per 10 secondi
                     try:
-                        client_socket.connect(("localhost",5902))
+                        client_socket.connect((host_n,port_n))
                         start_main_loop=False
                         connesso=False
                     except Exception as e:
+                        print(e)
                         timeout+=1
                         time.sleep(2)
                 else:
@@ -283,6 +290,7 @@ while True:
 
             #__________inizializzazione_mqtt.client___________________
             broker_host = "localhost"
+            #brocker_host = mosquitto[...]
             broker_port = 1883
             client = mqtt.Client(username)
             client.connect(broker_host, broker_port)
