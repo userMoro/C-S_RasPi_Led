@@ -87,17 +87,25 @@ def terminal():#permette di eseguire comandi sul led da terminale
     while True:
         on_off=input("inserisci un comando:\n-on1 = accendi led 1\n-on2 = accendi led 2\n-off1 = spegni led 1\n-off2 = spegni led 2\n-back = seleziona modalità\n")
         if on_off=="on1":
-            #GPIO.output(18, True)
-            print("GPIO.output(18, True)")
+            try:
+                GPIO.output(18, True)
+            except:
+                print("GPIO.output(18, True)")
         elif on_off=="on2":
-            #GPIO.output(19, True)
-            print("GPIO.output(19, True)")
+            try:
+                GPIO.output(19, True)
+            except:
+                print("GPIO.output(19, True)")
         elif on_off=="off1":
-            #GPIO.output(18, False)
-            print("GPIO.output(18, False)")
+            try:
+                GPIO.output(18, False)
+            except:
+                print("GPIO.output(18, False)")
         elif on_off=="off2":
-            #GPIO.output(19, False)
-            print("GPIO.output(19, False)")
+            try:
+                GPIO.output(19, False)
+            except:
+                print("GPIO.output(19, False)") 
         elif on_off=="back":
             break
         else:
